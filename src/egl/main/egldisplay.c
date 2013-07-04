@@ -60,6 +60,7 @@
 #include <sys/stat.h>
 #endif
 #ifdef HAVE_MIR_PLATFORM
+#include <dlfcn.h>
 #include <mir_toolkit/mesa/native_display.h>
 #endif
 
@@ -137,6 +138,47 @@ _eglPointerIsDereferencable(void *p)
 #endif
 }
 
+#ifdef HAVE_MIR_PLATFORM
+static EGLBoolean
+_mir_display_is_valid(EGLNativeDisplayType nativeDisplay)
+{
+   typedef int (*MirEGLNativeDisplayIsValidFunc)(MirMesaEGLNativeDisplay*);
+
+   void *lib;
+   MirEGLNativeDisplayIsValidFunc general_check;
+   MirEGLNativeDisplayIsValidFunc client_check;
+   MirEGLNativeDisplayIsValidFunc server_check;
+   EGLBoolean is_valid = EGL_FALSE;
+
+   lib = dlopen(NULL, RTLD_LAZY);
+   if (lib == NULL)
+      return EGL_FALSE;
+
+   general_check = (MirEGLNativeDisplayIsValidFunc) dlsym(lib, "mir_egl_mesa_display_is_valid");
+   client_check = (MirEGLNativeDisplayIsValidFunc) dlsym(lib, "mir_client_egl_mesa_display_is_valid");
+   server_check = (MirEGLNativeDisplayIsValidFunc) dlsym(lib, "mir_server_egl_mesa_display_is_valid");
+
+   if (general_check != NULL &&
+       general_check((MirMesaEGLNativeDisplay *)nativeDisplay))
+   {
+      is_valid = EGL_TRUE;
+   }
+   else if (client_check != NULL &&
+            client_check((MirMesaEGLNativeDisplay *)nativeDisplay))
+   {
+      is_valid = EGL_TRUE;
+   }
+   else if (server_check != NULL &&
+            server_check((MirMesaEGLNativeDisplay *)nativeDisplay))
+   {
+      is_valid = EGL_TRUE;
+   }
+
+   dlclose(lib);
+
+   return is_valid;
+}
+#endif
 
 /**
  * Try detecting native platform with the help of native display characteristcs.
@@ -158,7 +200,7 @@ _eglNativePlatformDetectNativeDisplay(EGLNativeDisplayType nativeDisplay)
 #endif
 
 #ifdef HAVE_MIR_PLATFORM
-   if (mir_egl_mesa_display_is_valid((MirMesaEGLNativeDisplay *)nativeDisplay))
+   if (_mir_display_is_valid(nativeDisplay))
       return _EGL_PLATFORM_MIR;
 #endif
 
