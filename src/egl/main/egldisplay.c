@@ -155,8 +155,8 @@ _mir_display_is_valid(EGLNativeDisplayType nativeDisplay)
       return EGL_FALSE;
 
    general_check = (MirEGLNativeDisplayIsValidFunc) dlsym(lib, "mir_egl_mesa_display_is_valid");
-   client_check = (MirEGLNativeDisplayIsValidFunc) dlsym(lib, "mir_client_egl_mesa_display_is_valid");
-   server_check = (MirEGLNativeDisplayIsValidFunc) dlsym(lib, "mir_server_egl_mesa_display_is_valid");
+   client_check = (MirEGLNativeDisplayIsValidFunc) dlsym(lib, "mir_client_mesa_egl_native_display_is_valid");
+   server_check = (MirEGLNativeDisplayIsValidFunc) dlsym(lib, "mir_server_mesa_egl_native_display_is_valid");
 
    if (general_check != NULL &&
        general_check((MirMesaEGLNativeDisplay *)nativeDisplay))
