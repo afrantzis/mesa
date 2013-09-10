@@ -28,9 +28,12 @@
 #include <mir_toolkit/mesa/native_display.h>
 
 #include "egl_dri2.h"
+#include <xf86drm.h>
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <errno.h>
 
 static __DRIbuffer *
 dri2_get_buffers_with_format(__DRIdrawable * driDrawable,
@@ -139,12 +142,23 @@ mir_advance_colour_buffer(struct dri2_egl_surface *surf)
    if(!surf->mir_surf->surface_advance_buffer(surf->mir_surf, &buffer_package))
       return EGL_FALSE;
 
+#define USE_PRIME 1
+#if USE_PRIME == 0
+   fprintf(stderr, " ====== platform_mir: advance buffer: name %d ======\n", buffer_package.data[0]);
+
+   surf->dri_buffers[__DRI_BUFFER_BACK_LEFT]->name = buffer_package.data[0];
+   surf->dri_buffers[__DRI_BUFFER_BACK_LEFT]->fd = -1;
+#else
+   fprintf(stderr, " ====== platform_mir: advance buffer: prime %d ======\n", buffer_package.fd[0]);
    /* We expect no data items, and (for the moment) one PRIME fd */
+   /*
    assert(buffer_package.data_items == 0);
    assert(buffer_package.fd_items == 1);
+   */
 
    surf->dri_buffers[__DRI_BUFFER_BACK_LEFT]->name = 0;
    surf->dri_buffers[__DRI_BUFFER_BACK_LEFT]->fd = buffer_package.fd[0];
+#endif
    surf->dri_buffers[__DRI_BUFFER_BACK_LEFT]->pitch = buffer_package.stride;
    return EGL_TRUE;
 }
@@ -260,12 +274,16 @@ dri2_swap_buffers(_EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *draw)
    struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
    struct dri2_egl_driver *dri2_drv = dri2_egl_driver(drv);
 
+   fprintf(stderr, " ====== platform_mir: dri2 swap buffers: before flush ======\n");
    (*dri2_dpy->flush->flush)(dri2_surf->dri_drawable);
 
+   fprintf(stderr, " ====== platform_mir: dri2 swap buffers: before advance ======\n");
    int rc = mir_advance_colour_buffer(dri2_surf);
 
+   fprintf(stderr, " ====== platform_mir: dri2 swap buffers: before invalidate ======\n");
    (*dri2_dpy->flush->invalidate)(dri2_surf->dri_drawable);
 
+   fprintf(stderr, " ====== platform_mir: dri2 swap buffers: end ======\n");
    return rc;
 }
 
@@ -273,6 +291,108 @@ static int
 dri2_mir_authenticate(_EGLDisplay *disp, uint32_t id)
 {
    return 0;
+}
+
+static _EGLImage *
+dri2_create_image_khr_pixmap(_EGLDisplay *disp, _EGLContext *ctx,
+                             EGLClientBuffer buffer, const EGLint *attr_list)
+{
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   struct gbm_dri_bo *dri_bo = gbm_dri_bo((struct gbm_bo *) buffer);
+   struct dri2_egl_image *dri2_img;
+
+   fprintf(stderr, " ====== platform_mir: create_image_khr: Entering v%d gbm_bo %p ======\n",
+          dri2_dpy->image->base.version, dri_bo);
+   dri2_img = malloc(sizeof *dri2_img);
+   if (!dri2_img) {
+      _eglError(EGL_BAD_ALLOC, "dri2_create_image_khr_pixmap");
+      return NULL;
+   }
+
+   if (!_eglInitImage(&dri2_img->base, disp)) {
+      free(dri2_img);
+      return NULL;
+   }
+
+   fprintf(stderr, " ====== platform_mir: create_image: After init image bo->image %p screen %p ====== \n", dri_bo->image, dri2_dpy->dri_screen);
+
+#define USE_DUP 0
+#if USE_DUP == 1
+   dri2_img->dri_image = dri2_dpy->image->dupImage(dri_bo->image, dri2_img);
+   if (dri2_img->dri_image == NULL) {
+      free(dri2_img);
+      _eglError(EGL_BAD_ALLOC, "dri2_create_image_khr_pixmap");
+      return NULL;
+   }
+#else
+   struct drm_gem_flink flink_arg;
+   int width, height, stride, format;
+
+   memset(&flink_arg, 0, sizeof(flink_arg));
+
+   dri2_dpy->image->queryImage(dri_bo->image,
+                              __DRI_IMAGE_ATTRIB_WIDTH,
+                              &width);
+   dri2_dpy->image->queryImage(dri_bo->image,
+                             __DRI_IMAGE_ATTRIB_HEIGHT,
+                             &height);
+   dri2_dpy->image->queryImage(dri_bo->image,
+                               __DRI_IMAGE_ATTRIB_STRIDE,
+                               &stride);
+   dri2_dpy->image->queryImage(dri_bo->image,
+                               __DRI_IMAGE_ATTRIB_FORMAT,
+                               &format);
+   dri2_dpy->image->queryImage(dri_bo->image,
+                               __DRI_IMAGE_ATTRIB_HANDLE,
+                               &flink_arg.handle);
+
+   fprintf(stderr,
+           " ===== platform_mir: create_image_khr: before ioctl GEM_FLINK with"
+           " fd: %d handle: %d width: %d height: %d format: %d stride: %d\n",
+           dri2_dpy->fd, flink_arg.handle, width, height, format, stride);
+
+   int ret = drmIoctl(dri2_dpy->fd, DRM_IOCTL_GEM_FLINK, &flink_arg);
+
+   fprintf(stderr,
+           " ===== platform_mir: create_image_khr: ioctl ret: %d errno: %d"
+           " handle: %d gem_flink: %d\n",
+           ret, errno, flink_arg.handle, flink_arg.name);
+
+   fprintf(stderr,
+           " ===== platform_mir: create_image_khr: before createImageFromName\n");
+
+   dri2_img->dri_image =
+      dri2_dpy->image->createImageFromName(dri2_dpy->dri_screen,
+                                           width,
+                                           height,
+                                           format,
+                                           flink_arg.name,
+                                           stride / 4,
+                                           NULL);
+   if (dri2_img->dri_image == NULL) {
+      free(dri2_img);
+      _eglError(EGL_BAD_ALLOC, "dri2_create_image_khr_pixmap");
+      return NULL;
+   }
+#endif
+   fprintf(stderr, " ====== platform_mir: create image: %p end\n", &dri2_img->base);
+
+   return &dri2_img->base;
+}
+
+static _EGLImage *
+dri2_mir_create_image_khr(_EGLDriver *drv, _EGLDisplay *disp,
+                          _EGLContext *ctx, EGLenum target,
+                          EGLClientBuffer buffer, const EGLint *attr_list)
+{
+   (void) drv;
+
+   switch (target) {
+   case EGL_NATIVE_PIXMAP_KHR:
+      return dri2_create_image_khr_pixmap(disp, ctx, buffer, attr_list);
+   default:
+      return dri2_create_image_khr(drv, disp, ctx, target, buffer, attr_list);
+   }
 }
 
 EGLBoolean
@@ -293,8 +413,8 @@ dri2_initialize_mir(_EGLDriver *drv, _EGLDisplay *disp)
 /*   drv->API.CreatePixmapSurface = dri2_create_pixmap_surface;
    drv->API.CreatePbufferSurface = dri2_create_pbuffer_surface;
    drv->API.CopyBuffers = dri2_copy_buffers;
-   drv->API.CreateImageKHR = dri2_x11_create_image_khr;
 */
+   drv->API.CreateImageKHR = dri2_mir_create_image_khr;
 
    dri2_dpy = calloc(1, sizeof *dri2_dpy);
    if (!dri2_dpy)

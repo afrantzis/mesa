@@ -307,8 +307,10 @@ gbm_dri_bo_write(struct gbm_bo *_bo, const void *buf, size_t count)
 {
    struct gbm_dri_bo *bo = gbm_dri_bo(_bo);
 
+   /*
    if (bo->image != NULL)
       return -1;
+    */
 
    memcpy(bo->map, buf, count);
 
@@ -577,6 +579,7 @@ gbm_dri_bo_create(struct gbm_device *gbm,
    int dri_format;
    unsigned dri_use = 0;
 
+   fprintf(stderr, " ====== Creating gbm_bo %dx%d ====== \n", width, height);
    if (usage & GBM_BO_USE_WRITE)
       return create_dumb(gbm, width, height, format, usage);
 
@@ -612,6 +615,8 @@ gbm_dri_bo_create(struct gbm_device *gbm,
    dri->image->queryImage(bo->image, __DRI_IMAGE_ATTRIB_STRIDE,
                           (int *) &bo->base.base.stride);
 
+   fprintf(stderr, " ====== Created gbm_bo %p %p with image %p handle: %d screen: %p ======\n",
+                   bo, &bo->base.base, bo->image, bo->base.base.handle.s32, dri->screen);
    return &bo->base.base;
 }
 
