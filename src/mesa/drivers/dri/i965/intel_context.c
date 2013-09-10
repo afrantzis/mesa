@@ -850,6 +850,26 @@ intel_process_dri2_buffer(struct brw_context *brw,
 
    unsigned num_samples = rb->Base.Base.NumSamples;
 
+   if (unlikely(INTEL_DEBUG & DEBUG_DRI)) {
+      fprintf(stderr,
+	      "intel_process_dri2_buffer: buffer->name %d, buffer->fd %d\n",
+	      buffer->name, buffer->fd);
+       if (rb->mt && rb->mt->region)
+       {
+          fprintf(stderr,
+              "intel_process_dri2_buffer: region->name %d region->handle %d\n",
+              rb->mt->region->name, rb->mt->region->handle);
+       }
+       if (rb->mt && rb->mt->singlesample_mt && rb->mt->singlesample_mt->region)
+       {
+          fprintf(stderr,
+              "intel_process_dri2_buffer: singlesample_mt->region->name %d"
+              " singlesample_mt->region->handle %d\n",
+              rb->mt->singlesample_mt->region->name,
+              rb->mt->singlesample_mt->region->handle);
+       }
+   }
+
    /* We try to avoid closing and reopening the same BO name, because the first
     * use of a mapping of the buffer involves a bunch of page faulting which is
     * moderately expensive.
@@ -867,6 +887,29 @@ intel_process_dri2_buffer(struct brw_context *brw,
            rb->mt->singlesample_mt->region->name == buffer->name &&
            rb->mt->singlesample_mt->region->name != 0)
           return;
+   }
+
+   if (buffer->fd && rb->mt) {
+    __DRIscreen *const screen = brw->intelScreen->driScrnPriv;
+      uint32_t handle;
+      int ret = drmPrimeFDToHandle(screen->fd, buffer->fd, &handle);
+      if (ret) {
+         fprintf(stderr, "Obtaining handle failed with %i %m\n", ret);
+         return;
+      }
+       if (unlikely(INTEL_DEBUG & DEBUG_DRI))
+          fprintf(stderr, "intel_process_dri2_buffer: drmPrimeFDToHandle -> %d\n", handle);
+
+      if (num_samples == 0) {
+         if (rb->mt->region &&
+             rb->mt->region->handle == handle)
+            return;
+     } else {
+         if (rb->mt->singlesample_mt &&
+             rb->mt->singlesample_mt->region &&
+             rb->mt->singlesample_mt->region->handle == handle)
+          return;
+      }
    }
 
    if (unlikely(INTEL_DEBUG & DEBUG_DRI)) {

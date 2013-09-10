@@ -123,6 +123,7 @@ intel_region_alloc_internal(struct intel_screen *screen,
    region->refcount = 1;
    region->bo = buffer;
    region->tiling = tiling;
+   region->handle = buffer->handle;
 
    _DBG("%s <-- %p\n", __FUNCTION__, region);
    return region;

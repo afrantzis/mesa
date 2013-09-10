@@ -682,6 +682,7 @@ intel_miptree_create_for_dri2_buffer(struct brw_context *brw,
    if (!singlesample_mt)
       return NULL;
    singlesample_mt->region->name = region->name;
+   singlesample_mt->region->handle = region->handle;
 
    /* If this miptree is capable of supporting fast color clears, set
     * mcs_state appropriately to ensure that fast clears will occur.

@@ -69,6 +69,7 @@ struct intel_region
    uint32_t tiling; /**< Which tiling mode the region is in */
 
    uint32_t name; /**< Global name for the bo */
+   uint32_t handle; /**< Global name for the bo */
 };
 
 
