@@ -171,7 +171,6 @@ dri2_create_mir_window_surface(_EGLDriver *drv, _EGLDisplay *disp,
                                _EGLConfig *conf, EGLNativeWindowType window,
                                const EGLint *attrib_list)
 {
-   int rc;
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_config *dri2_conf = dri2_egl_config(conf);
    struct dri2_egl_surface *dri2_surf;
@@ -272,7 +271,6 @@ dri2_swap_buffers(_EGLDriver *drv, _EGLDisplay *disp, _EGLSurface *draw)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
    struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
-   struct dri2_egl_driver *dri2_drv = dri2_egl_driver(drv);
 
    fprintf(stderr, " ====== platform_mir: dri2 swap buffers: before flush ======\n");
    (*dri2_dpy->flush->flush)(dri2_surf->dri_drawable);
@@ -316,7 +314,7 @@ dri2_create_image_khr_pixmap(_EGLDisplay *disp, _EGLContext *ctx,
 
    fprintf(stderr, " ====== platform_mir: create_image: After init image bo->image %p screen %p ====== \n", dri_bo->image, dri2_dpy->dri_screen);
 
-#define USE_DUP 0
+#define USE_DUP 1
 #if USE_DUP == 1
    dri2_img->dri_image = dri2_dpy->image->dupImage(dri_bo->image, dri2_img);
    if (dri2_img->dri_image == NULL) {
@@ -425,6 +423,82 @@ dri2_initialize_mir(_EGLDriver *drv, _EGLDisplay *disp)
    dri2_dpy->mir_disp->display_get_platform(dri2_dpy->mir_disp, &platform);
    dri2_dpy->fd = platform.fd[0];
    dri2_dpy->driver_name = dri2_get_driver_for_fd(dri2_dpy->fd);
+
+#if 0
+   /* Normal */
+   if (platform.data_items == 0)
+   {
+       fprintf(stderr, " ====== platform_mir: Normal mode\n");
+       dri2_dpy->device_name = dri2_get_device_name_for_fd(dri2_dpy->fd);
+
+       if (dri2_dpy->driver_name == NULL ||
+           dri2_dpy->device_name == NULL)
+          goto cleanup_dpy;
+
+       if (!dri2_load_driver(disp))
+          goto cleanup_dpy;
+
+   }
+   else
+   {
+       struct gbm_dri_device *gbm_dri = gbm_dri_device(*(struct gbm_device**)platform.data);
+       fprintf(stderr, " ====== platform_mir: Got GBMDEVICE %p\n", gbm_dri);
+
+       dri2_dpy->driver_name = gbm_dri->base.driver_name;
+
+       dri2_dpy->dri_screen = gbm_dri->screen;
+       dri2_dpy->core = gbm_dri->core;
+       dri2_dpy->dri2 = gbm_dri->dri2;
+       dri2_dpy->image = gbm_dri->image;
+       dri2_dpy->flush = gbm_dri->flush;
+       dri2_dpy->driver_configs = gbm_dri->driver_configs;
+
+       gbm_dri->lookup_image = dri2_lookup_egl_image;
+       gbm_dri->lookup_user_data = disp;
+
+       /*
+       gbm_dri->get_buffers = dri2_get_buffers;
+       gbm_dri->flush_front_buffer = dri2_flush_front_buffer;
+       gbm_dri->get_buffers_with_format = dri2_get_buffers_with_format;
+
+       dri2_dpy->gbm_dri->base.base.surface_lock_front_buffer = lock_front_buffer;
+       dri2_dpy->gbm_dri->base.base.surface_release_buffer = release_buffer;
+       dri2_dpy->gbm_dri->base.base.surface_has_free_buffers = has_free_buffers;
+       */
+
+   }
+
+   if (platform.data_items == 0)
+   {
+       dri2_dpy->dri2_loader_extension.base.name = __DRI_DRI2_LOADER;
+       dri2_dpy->dri2_loader_extension.base.version = 4;
+       dri2_dpy->dri2_loader_extension.getBuffers = dri2_get_buffers;
+       dri2_dpy->dri2_loader_extension.flushFrontBuffer = dri2_flush_front_buffer;
+       dri2_dpy->dri2_loader_extension.getBuffersWithFormat =
+          dri2_get_buffers_with_format;
+
+       dri2_dpy->extensions[0] = &dri2_dpy->dri2_loader_extension.base;
+       dri2_dpy->extensions[1] = &image_lookup_extension.base;
+       dri2_dpy->extensions[2] = &use_invalidate.base;
+       dri2_dpy->extensions[3] = NULL;
+
+       if (!dri2_create_screen(disp))
+          goto cleanup_dpy;
+   }
+   else
+   {
+       dri2_setup_screen(disp);
+   }
+#else
+   dri2_dpy->dri_screen = NULL;
+   if (platform.data_items != 0)
+   {
+       struct gbm_dri_device *gbm_dri = gbm_dri_device(*(struct gbm_device**)platform.data);
+       fprintf(stderr, " ====== platform_mir: Got GBMDEVICE %p\n", gbm_dri);
+       dri2_dpy->dri_screen = gbm_dri->screen;
+       dri2_dpy->driver_configs = gbm_dri->driver_configs;
+   }
+
    dri2_dpy->device_name = dri2_get_device_name_for_fd(dri2_dpy->fd);
 
    if (dri2_dpy->driver_name == NULL ||
@@ -434,6 +508,9 @@ dri2_initialize_mir(_EGLDriver *drv, _EGLDisplay *disp)
    if (!dri2_load_driver(disp))
       goto cleanup_dpy;
 
+   /* Are these set up correctly when we are providing the dri_screen
+    * i.e. we are not calling createNewScreen() in dri2_create_screen.
+    */
    dri2_dpy->dri2_loader_extension.base.name = __DRI_DRI2_LOADER;
    dri2_dpy->dri2_loader_extension.base.version = 4;
    dri2_dpy->dri2_loader_extension.getBuffers = dri2_get_buffers;
@@ -446,9 +523,10 @@ dri2_initialize_mir(_EGLDriver *drv, _EGLDisplay *disp)
    dri2_dpy->extensions[2] = &use_invalidate.base;
    dri2_dpy->extensions[3] = NULL;
 
+   /* create_screen has been change to actually create a screen only if dri2_dpy->dri_screen is NULL... */
    if (!dri2_create_screen(disp))
       goto cleanup_dpy;
-
+#endif
    types = EGL_WINDOW_BIT;
    for (i = 0; dri2_dpy->driver_configs[i]; i++) {
       config = dri2_dpy->driver_configs[i];
