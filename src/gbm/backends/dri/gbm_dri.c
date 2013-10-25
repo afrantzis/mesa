@@ -307,9 +307,6 @@ gbm_dri_bo_write(struct gbm_bo *_bo, const void *buf, size_t count)
 {
    struct gbm_dri_bo *bo = gbm_dri_bo(_bo);
 
-   if (bo->image != NULL)
-      return -1;
-
    memcpy(bo->map, buf, count);
 
    return 0;
