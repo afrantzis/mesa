@@ -518,8 +518,6 @@ dri2_create_screen(_EGLDisplay *disp)
 
    dri2_dpy = disp->DriverData;
 
-   if (dri2_dpy->dri_screen == NULL)
-   {
    if (dri2_dpy->dri2) {
       dri2_dpy->dri_screen =
          dri2_dpy->dri2->createNewScreen(0, dri2_dpy->fd, dri2_dpy->extensions,
@@ -535,11 +533,7 @@ dri2_create_screen(_EGLDisplay *disp)
       return EGL_FALSE;
    }
 
-
    dri2_dpy->own_dri_screen = 1;
-
-   }
-
 
    extensions = dri2_dpy->core->getExtensions(dri2_dpy->dri_screen);
    
