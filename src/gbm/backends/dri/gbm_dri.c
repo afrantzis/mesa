@@ -116,7 +116,7 @@ static const __DRIimageLookupExtension image_lookup_extension = {
 };
 
 const __DRIdri2LoaderExtension dri2_loader_extension = {
-   { __DRI_DRI2_LOADER, 3 },
+   { __DRI_DRI2_LOADER, 4 },
    dri_get_buffers,
    dri_flush_front_buffer,
    dri_get_buffers_with_format,
@@ -306,9 +306,6 @@ static int
 gbm_dri_bo_write(struct gbm_bo *_bo, const void *buf, size_t count)
 {
    struct gbm_dri_bo *bo = gbm_dri_bo(_bo);
-
-   if (bo->image != NULL)
-      return -1;
 
    memcpy(bo->map, buf, count);
 
